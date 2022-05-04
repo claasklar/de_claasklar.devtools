@@ -1,0 +1,2 @@
+[testgroup]
+testhost ansible_connection="ssh" ansible_pipelining="yes" ansible_python_interpreter="/usr/bin/python3.10" ansible_host="192.168.0.24" ansible_user="boss" ansible_ssh_private_key_file="/home/boss/.ansible/test/id_rsa"

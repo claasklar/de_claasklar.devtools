@@ -1,0 +1,83 @@
+- name: Remove dir for testing
+  file:
+    state: absent
+    path: /tmp/test
+
+- name: Uninstall package
+  become: yes
+  become_user: root
+  community.general.pacman:
+    name: hello-world
+    state: absent
+
+- name: Create dir for testing
+  file:
+    state: directory
+    path: /tmp/test
+
+- name: Copy PKBUILD
+  copy:
+    src: files/hello-world
+    dest: /tmp/test/
+
+- name: Build package
+  de_claasklar.devtools.devtools_build:
+    pkgbuild_dir: /tmp/test/hello-world
+    action: build
+  register: build_package
+
+- name: Stats of build package
+  stat:
+    path: /tmp/test/hello-world/hello-world-1.0.0-1-x86_64.pkg.tar.zst
+  register: package_stat
+
+- name: Assert that package was build
+  assert:
+    that:
+      - "package_stat.stat.exists"
+      - "build_package.changed"
+
+- name: Rerun build
+  de_claasklar.devtools.devtools_build:
+    pkgbuild_dir: /tmp/test/hello-world
+    action: build
+  register: build_package
+
+- name: Stats of newly build package
+  stat:
+    path: /tmp/test/hello-world/hello-world-1.0.0-1-x86_64.pkg.tar.zst
+  register: package_new_stat
+
+- name: Assert that package was not rebuild
+  assert:
+    that:
+      - "not build_package.changed"
+      - "package_stat.stat['ctime'] == package_new_stat.stat['ctime']"
+
+- name: Install package
+  become: yes
+  become_user: root
+  de_claasklar.devtools.devtools_build:
+    pkgbuild_dir: /tmp/test/hello-world
+    action: install
+  register: install_package
+
+- name: Assert that package is installed
+  block:
+    - command: pacman -Q hello-world
+      register: hello_world_installed
+    - assert:
+        that:
+          - "'hello-world 1.0.0-1' in hello_world_installed.stdout"
+
+- name: Remove dir for testing
+  file:
+    state: absent
+    path: /tmp/test
+
+- name: Uninstall package
+  become: yes
+  become_user: root
+  community.generla.pacman:
+    name: hello-world
+    state: absent

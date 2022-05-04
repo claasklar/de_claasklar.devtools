@@ -1,0 +1,12 @@
+pkgname=('hello-world')
+pkgver=1.0.0
+pkgrel=1
+pkgdesc='Demo application'
+arch=('x86_64')
+license=('MIT')
+source=('hello-world.sh')
+sha256sums=('cf2b7497277a6ec9aa3035755dfc21444d6cb7c3d305e4ec51be5551740369ad')
+
+package() {
+    install -Dm644 hello-world.sh -T "$pkgdir/usr/bin/hello-world"
+}
