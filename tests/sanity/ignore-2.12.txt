@@ -1,0 +1,2 @@
+tests/integration/targets/devtools-build/files/hello-world/hello-world.sh shebang
+tests/integration/targets/devtools-build/files/split-packages/hello-world.sh shebang

@@ -3,6 +3,10 @@
 # Copyright: (c) 2022, claasklar <git@claasklar.de>
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
+from __future__ import absolute_import, division, print_function
+
+__metaclass__ = type
+
 DOCUMENTATION = r'''
 ---
 module: devtools_build
@@ -82,9 +86,11 @@ import sys
 
 MAKEPKG_SRCINFO = ["bash", "-c", "source /usr/share/makepkg/srcinfo.sh && source PKGBUILD && write_srcinfo"]
 
+
 def srcinfo(pkgbuild_dir, module):
-    _, srcinfo, err = module.run_command(MAKEPKG_SRCINFO, cwd=pkgbuild_dir)
+    rc, srcinfo, err = module.run_command(MAKEPKG_SRCINFO, cwd=pkgbuild_dir)
     return srcinfo
+
 
 def pkg_infos(srcinfo):
     packages = []
@@ -93,14 +99,14 @@ def pkg_infos(srcinfo):
     for line in srcinfo.splitlines():
         line = line.strip()
         if line.startswith("pkgver ="):
-            _, _, version_info["pkgver"] = line.partition(" = ")
+            version_info["pkgver"] = line.partition(" = ")[2]
         if line.startswith("pkgrel ="):
-            _, _, version_info["pkgrel"] = line.partition(" = ")
+            version_info["pkgrel"] = line.partition(" = ")[2]
 
     for line in srcinfo.splitlines():
         line = line.strip()
         if line.startswith("pkgname ="):
-            _, _, pkgname = line.partition(" = ")
+            pkgname = line.partition(" = ")[2]
             pkg_version_info = dict(version_info)
             pkg_version_info["pkgname"] = pkgname
             packages.append(pkg_version_info)
@@ -137,12 +143,12 @@ def build_package(pkg_info, pkgbuild_dir, module):
 
 
 def is_package_installed(pkg_info, module):
-    rc, stdout, _ = module.run_command(["pacman", "-Q", pkg_info["pkgname"]], check_rc=False)
+    rc, stdout, stderr = module.run_command(["pacman", "-Q", pkg_info["pkgname"]], check_rc=False)
     if rc != 0:
         return False
 
     # stdout is in this format "<pkgname> <pkgver>-<pkgrel>"
-    installed_pkgver, _, installed_pkgrel = stdout.partition(" ")[2].partition("-")
+    installed_pkgver, installed_pkgrel = stdout.partition(" ").split()
     if installed_pkgver != pkg_info["pkgver"]:
         return False
     if installed_pkgrel != pkg_info["pkgrel"]:
@@ -157,6 +163,7 @@ def install_packages(pkgbuild_dir, install_options, module):
         changed = install_package(pkg_info, install_options, pkgbuild_dir, module) or changed
 
     return changed
+
 
 def install_package(pkg_info, install_options, pkgbuild_dir, module):
     if is_package_installed(pkg_info, module):
