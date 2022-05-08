@@ -3,11 +3,14 @@
     state: absent
     path: /tmp/test
 
-- name: Uninstall package
+- name: Uninstall packages
   become: yes
   become_user: root
   community.general.pacman:
-    name: hello-world
+    name:
+      - "hello-world"
+      - "hello-world1"
+      - "hello-world2"
     state: absent
 
 - name: Create dir for testing
@@ -70,14 +73,46 @@
         that:
           - "'hello-world 1.0.0-1' in hello_world_installed.stdout"
 
+- name: Copy split-package PKGBUILD
+  copy:
+    src: files/split-packages
+    dest: /tmp/test/
+
+- name: Build and install split-packages
+  become: yes
+  become_user: root
+  de_claasklar.devtools.devtools_build:
+    pkgbuild_dir: /tmp/test/split-packages
+    action: install
+  register: install_split_packages
+
+- name: Assert that both split packages are installed
+  block:
+    - command: pacman -Q hello-world1
+      register: hello_world1_installed
+      ignore_errors: yes
+    - command: pacman -Q hello-world2
+      register: hello_world2_installed
+      ignore_errors: yes
+    - assert:
+        that:
+          - "hello_world1_installed.rc == 0"
+          - "hello_world2_installed.rc == 0"
+          - "'hello-world1 1.0.0-1' in hello_world1_installed.stdout"
+          - "'hello-world2 1.0.0-1' in hello_world2_installed.stdout"
+          - "install_split_packages.changed"
+
 - name: Remove dir for testing
   file:
     state: absent
     path: /tmp/test
 
-- name: Uninstall package
+- name: Uninstall packages
   become: yes
   become_user: root
-  community.generla.pacman:
-    name: hello-world
-    state: absent
+  community.general.pacman:
+    name:
+      - "hello-world"
+      - "hello-world1"
+      - "hello-world2"
+    state: removed

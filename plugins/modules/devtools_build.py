@@ -22,12 +22,13 @@ options:
         description:
             - Action to take
             - Install includes build
+            - If package is a split package, all packages will be installed
         type: str
         choices: ['build', 'install']
         default: 'build'
     install_options:
         description:
-            - These optiosn will be appendend to pacman -U call
+            - These options will be appended to pacman -U call
         type: list
         elements: str
         default: []
@@ -79,73 +80,93 @@ import os
 import re
 import sys
 
+MAKEPKG_SRCINFO = ["bash", "-c", "source /usr/share/makepkg/srcinfo.sh && source PKGBUILD && write_srcinfo"]
 
-def pkg_info(pkgbuild):
+def srcinfo(pkgbuild_dir, module):
+    _, srcinfo, err = module.run_command(MAKEPKG_SRCINFO, cwd=pkgbuild_dir)
+    return srcinfo
+
+def pkg_infos(srcinfo):
+    packages = []
     version_info = {"pkgname": None, "pkgver": None, "pkgrel": None}
 
-    for line in pkgbuild:
+    for line in srcinfo.splitlines():
         line = line.strip()
-        if line.startswith("pkgname="):
-            _, _, version_info["pkgname"] = line.partition("=")
-            # TODO: support split packages
-            version_info["pkgname"] = version_info["pkgname"].lstrip("('").rstrip("')")
-        if line.startswith("pkgver="):
-            _, _, version_info["pkgver"] = line.partition("=")
-        if line.startswith("pkgrel="):
-            _, _, version_info["pkgrel"] = line.partition("=")
+        if line.startswith("pkgver ="):
+            _, _, version_info["pkgver"] = line.partition(" = ")
+        if line.startswith("pkgrel ="):
+            _, _, version_info["pkgrel"] = line.partition(" = ")
 
-    for item in version_info.items():
-        if item[1] is None:
-            raise KeyError("{0} not found in PKGBUILD".format(item[0]))
+    for line in srcinfo.splitlines():
+        line = line.strip()
+        if line.startswith("pkgname ="):
+            _, _, pkgname = line.partition(" = ")
+            pkg_version_info = dict(version_info)
+            pkg_version_info["pkgname"] = pkgname
+            packages.append(pkg_version_info)
 
-    return version_info
-
-
-def pkg_version_regex(pkgbuild):
-    version_info = pkg_info(pkgbuild)
-    return "{pkgname}-{pkgver}-{pkgrel}-[a-z0-9_]+\\.pkg\\.tar\\.((zst|xz))".format_map(version_info)
+    return packages
 
 
-def pkg_exists():
-    with open("PKGBUILD", "r") as pkgbuild:
-        pkg_version = pkg_version_regex(pkgbuild)
+def pkg_version_regex(pkg_info):
+    return "{pkgname}-{pkgver}-{pkgrel}-[a-z0-9_]+\\.pkg\\.tar\\.((zst|xz))".format_map(pkg_info)
+
+
+def pkg_exists(pkg_info):
+    file_regex = pkg_version_regex(pkg_info)
     for file_name in os.listdir():
-        if re.fullmatch(pkg_version, file_name) is not None:
+        if re.fullmatch(file_regex, file_name) is not None:
             return True
     return False
 
 
-def build_package(pkgbuild_dir, module):
-    if pkg_exists():
+def build_packages(pkgbuild_dir, module):
+    changed = False
+    for pkg_info in pkg_infos(srcinfo(pkgbuild_dir, module)):
+        changed = changed or build_package(pkg_info, pkgbuild_dir, module)
+
+    return changed
+
+
+def build_package(pkg_info, pkgbuild_dir, module):
+    if not pkg_exists(pkg_info):
+        module.run_command(["extra-x86_64-build"], check_rc=True, cwd=pkgbuild_dir)
+        return True
+
+    return False
+
+
+def is_package_installed(pkg_info, module):
+    rc, stdout, _ = module.run_command(["pacman", "-Q", pkg_info["pkgname"]], check_rc=False)
+    if rc != 0:
         return False
 
-    module.run_command(["extra-x86_64-build"], check_rc=True, cwd=pkgbuild_dir)
+    # stdout is in this format "<pkgname> <pkgver>-<pkgrel>"
+    installed_pkgver, _, installed_pkgrel = stdout.partition(" ")[2].partition("-")
+    if installed_pkgver != pkg_info["pkgver"]:
+        return False
+    if installed_pkgrel != pkg_info["pkgrel"]:
+        return False
+
     return True
 
 
-def is_package_installed(module):
-    _, stdout, _ = module.run_command(["pacman", "-Q"], check_rc=True)
-    module.debug(stdout)
-    installed_packages = map(lambda line: line.partition(" ")[0], stdout.splitlines())
+def install_packages(pkgbuild_dir, install_options, module):
+    changed = False
+    for pkg_info in pkg_infos(srcinfo(pkgbuild_dir, module)):
+        changed = install_package(pkg_info, install_options, pkgbuild_dir, module) or changed
 
-    with open("PKGBUILD", "r") as pkgbuild:
-        pkg_version = pkg_info(pkgbuild)
-        if pkg_version["pkgname"] in installed_packages:
-            return True
+    return changed
 
-    return False
-
-
-def install_package(pkgbuild_dir, install_options, module):
-    if is_package_installed(module):
+def install_package(pkg_info, install_options, pkgbuild_dir, module):
+    if is_package_installed(pkg_info, module):
         return False
 
     pkg_file_name = None
-    with open("PKGBUILD", "r") as pkgbuild:
-        pkg_version = pkg_version_regex(pkgbuild)
+    file_regex = pkg_version_regex(pkg_info)
 
     for file_name in os.listdir():
-        if re.fullmatch(pkg_version, file_name) is not None:
+        if re.fullmatch(file_regex, file_name) is not None:
             pkg_file_name = file_name
             break
 
@@ -153,17 +174,21 @@ def install_package(pkgbuild_dir, install_options, module):
     return True
 
 
-def run_module():
+def init_module():
     # define available arguments/parameters a user can pass to the module
     module_args = dict(
         pkgbuild_dir=dict(type='str', required=True),
         action=dict(type='str', choices=['build', 'install'], default='build'),
         install_options=dict(type='list', elements='str', default=[])
     )
-    module = AnsibleModule(
+    return AnsibleModule(
         argument_spec=module_args,
         supports_check_mode=True
     )
+
+
+def run_module():
+    module = init_module()
 
     result = dict(changed=False)
 
@@ -171,10 +196,10 @@ def run_module():
         module.exit_json(**result)
 
     os.chdir(module.params['pkgbuild_dir'])
-    result["changed"] = build_package(module.params['pkgbuild_dir'], module)
+    result["changed"] = build_packages(module.params['pkgbuild_dir'], module)
 
     if module.params['action'] == "install":
-        result["changed"] = result["changed"] or install_package(module.params['pkgbuild_dir'], module.params['install_options'], module)
+        install_packages(module.params['pkgbuild_dir'], module.params['install_options'], module)
 
     module.exit_json(**result)
 
