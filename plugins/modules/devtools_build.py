@@ -134,8 +134,8 @@ def is_package_installed(pkg_info, module):
     if rc != 0:
         return False
 
-    # stdout is in this format "<pkgname> <pkgver>-<pkgrel>"
-    installed_pkgver, installed_pkgrel = stdout.partition(" ").split()
+    # stdout is in this format "<pkgname> <pkgver>-<pkgrel>\n"
+    installed_pkgver, installed_pkgrel = stdout.strip().split(" ")[1].split("-")
     if installed_pkgver != pkg_info["pkgver"]:
         return False
     if installed_pkgrel != pkg_info["pkgrel"]:
