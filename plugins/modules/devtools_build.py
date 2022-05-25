@@ -63,7 +63,13 @@ EXAMPLES = r'''
 '''
 
 RETURN = r'''
-# These are examples of possible return values, and in general should use other names for return values.
+package_paths:
+    description:
+        - A list of path to the built packages
+    returned: success
+    type: list
+    elements: str
+    sample: ["/tmp/test/split-packages/hello-world1-1.0.0-1-x86_64.pkg.tar.zst", "/tmp/test/split-packages/hello-world2-1.0.0-1-x86_64.pkg.tar.zst"]
 '''
 
 from ansible.module_utils.basic import AnsibleModule
@@ -104,28 +110,36 @@ def pkg_infos(srcinfo):
 def pkg_version_regex(pkg_info):
     return re.escape("{pkgname}-{pkgver}-{pkgrel}-".format_map(pkg_info)) + "[a-z0-9_]+\\.pkg\\.tar\\.((zst|xz))"
 
-def pkg_exists(pkg_info):
+
+def pkg_path(pkg_info):
     file_regex = pkg_version_regex(pkg_info)
     for file_name in os.listdir():
         if re.fullmatch(file_regex, file_name) is not None:
-            return True
-    return False
+            return os.path.join(os.getcwd(), file_name)
+    return None
+
+
+def pkg_exists(pkg_info):
+    return pkg_path(pkg_info) is not None
 
 
 def build_packages(pkgbuild_dir, module):
     changed = False
+    package_paths = []
     for pkg_info in pkg_infos(srcinfo(pkgbuild_dir, module)):
-        changed = changed or build_package(pkg_info, pkgbuild_dir, module)
+        package_changed, package_path = build_package(pkg_info, pkgbuild_dir, module)
+        changed = changed or package_changed
+        package_paths.append(package_path)
 
-    return changed
+    return changed, package_paths
 
 
 def build_package(pkg_info, pkgbuild_dir, module):
     if not pkg_exists(pkg_info):
         module.run_command(["extra-x86_64-build"], check_rc=True, cwd=pkgbuild_dir)
-        return True
+        return True, pkg_path(pkg_info)
 
-    return False
+    return False, pkg_path(pkg_info)
 
 
 def is_package_installed(pkg_info, module):
@@ -189,7 +203,7 @@ def run_module():
         module.exit_json(**result)
 
     os.chdir(module.params['pkgbuild_dir'])
-    result["changed"] = build_packages(module.params['pkgbuild_dir'], module)
+    result["changed"], result["package_paths"] = build_packages(module.params['pkgbuild_dir'], module)
 
     if module.params['action'] == "install":
         install_packages(module.params['pkgbuild_dir'], module.params['install_options'], module)

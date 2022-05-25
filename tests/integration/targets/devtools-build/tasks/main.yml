@@ -39,6 +39,7 @@
     that:
       - "package_stat.stat.exists"
       - "build_package.changed"
+      - "build_package.package_paths == ['/tmp/test/hello-world/hello-world-1.0.0-1-x86_64.pkg.tar.zst']"
 
 - name: Rerun build
   de_claasklar.devtools.devtools_build:
