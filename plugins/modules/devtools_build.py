@@ -102,8 +102,7 @@ def pkg_infos(srcinfo):
 
 
 def pkg_version_regex(pkg_info):
-    return "{pkgname}-{pkgver}-{pkgrel}-[a-z0-9_]+\\.pkg\\.tar\\.((zst|xz))".format_map(pkg_info)
-
+    return re.escape("{pkgname}-{pkgver}-{pkgrel}-".format_map(pkg_info)) + "[a-z0-9_]+\\.pkg\\.tar\\.((zst|xz))"
 
 def pkg_exists(pkg_info):
     file_regex = pkg_version_regex(pkg_info)
